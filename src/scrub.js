@@ -97,7 +97,12 @@ function png(b) {
       const body = b.subarray(i + 8, i + 8 + len);
       if (type === 'eXIf') found.push(...readExif(body));
       else if (type === 'tIME') found.push({ key: 'Modified', value: `${u16(d, i + 8, false)}-${b[i + 10]}-${b[i + 11]}`, risk: 'low' });
-      else { const z = body.indexOf(0); if (!/^(exif|date|png):/.test(td.decode(body.subarray(0, z)))) found.push({ key: `Text: ${td.decode(body.subarray(0, z))}`, value: type === 'tEXt' ? td.decode(body.subarray(z + 1)).slice(0, 80) : '(compressed text)', risk: 'med' }); }
+      else {
+        const z = body.indexOf(0);
+        const key = td.decode(body.subarray(0, z));
+        const low = /^(exif|date|png):/.test(key);
+        found.push({ key: `Text: ${key}`, value: type === 'tEXt' ? td.decode(body.subarray(z + 1)).slice(0, 80) : '(compressed text)', risk: low ? 'low' : 'med' });
+      }
     } else keep.push(b.subarray(i, end));
     i = end;
   }
@@ -177,17 +182,31 @@ async function inflateRaw(data) {
 }
 function xmlField(xml, tag) { const m = xml.match(new RegExp(`<${tag}[^>]*>([^<]+)</${tag}>`)); return m ? m[1].trim() : ''; }
 const CORE = ['dc:creator', 'cp:lastModifiedBy', 'dc:title', 'dc:subject', 'cp:keywords', 'dc:description', 'cp:category'];
-const APP = ['Company', 'Manager', 'Application', 'AppVersion', 'HyperlinksChanged'];
-const LABEL = { 'dc:creator': 'Author', 'cp:lastModifiedBy': 'Last modified by', 'dc:title': 'Title', 'dc:subject': 'Subject', 'cp:keywords': 'Keywords', 'dc:description': 'Description', 'cp:category': 'Category', Company: 'Company', Manager: 'Manager', Application: 'Application', AppVersion: 'App version' };
+// These are removed as whole elements (empty date fields can make Office complain).
+const REMOVE = ['cp:revision', 'cp:lastPrinted', 'dcterms:created', 'dcterms:modified'];
+const APP = ['Company', 'Manager', 'Application', 'AppVersion'];
+const LABEL = { 'dc:creator': 'Author', 'cp:lastModifiedBy': 'Last modified by', 'dc:title': 'Title', 'dc:subject': 'Subject', 'cp:keywords': 'Keywords', 'dc:description': 'Description', 'cp:category': 'Category', 'cp:revision': 'Revision count', 'cp:lastPrinted': 'Last printed', 'dcterms:created': 'Created', 'dcterms:modified': 'Modified', Company: 'Company', Manager: 'Manager', Application: 'Application', AppVersion: 'App version' };
 async function ooxml(b) {
   const ents = readZip(b); const found = []; const out = [];
   const stored = (e, text) => { const data = te.encode(text); return { ...e, method: 0, data, csize: data.length, usize: data.length, crc: crc32(data) }; };
   for (const e of ents) {
     if (e.name === 'docProps/core.xml' || e.name === 'docProps/app.xml') {
       const xml = td.decode(e.method === 0 ? e.data : await inflateRaw(e.data));
-      const tags = e.name.endsWith('core.xml') ? CORE : APP;
+      const isCore = e.name.endsWith('core.xml');
+      const tags = isCore ? CORE : APP;
       let clean = xml;
       for (const t of tags) { const v = xmlField(xml, t); if (v) { found.push({ key: LABEL[t] || t, value: v, risk: /creator|modifiedBy|Company|Manager/.test(t) ? 'high' : 'low' }); clean = clean.replace(new RegExp(`(<${t}[^>]*>)[^<]*(</${t}>)`), '$1$2'); } }
+      if (isCore) {
+        for (const t of REMOVE) {
+          const re = new RegExp(`<${t}[^>]*(?:/>|>([^<]*)</${t}>)`);
+          const m = clean.match(re);
+          if (m) {
+            const v = (m[1] || '').trim();
+            if (v) found.push({ key: LABEL[t] || t, value: v, risk: 'low' });
+            clean = clean.replace(re, '');
+          }
+        }
+      }
       out.push(stored(e, clean));
     } else if (e.name === 'docProps/custom.xml') {
       found.push({ key: 'Custom properties', value: 'removed', risk: 'med' });

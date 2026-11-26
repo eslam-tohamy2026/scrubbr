@@ -19,7 +19,7 @@ A photo from your phone can carry the GPS spot where you took it, the phone mode
 | JPEG | EXIF (GPS, make, model, serials, owner), XMP, IPTC/Photoshop, comments, extra APP blocks |
 | PNG | tEXt/zTXt/iTXt, eXIf, tIME |
 | WebP | EXIF, XMP |
-| DOCX / XLSX / PPTX | author, last modified by, title, company, keywords, custom properties, thumbnail |
+| DOCX / XLSX / PPTX | author, last modified by, title, company, keywords, created/modified timestamps, revision count, custom properties, thumbnail |
 
 Comments and tracked changes in Office files are reported but never edited, so your content is not touched. PDF support is on the roadmap.
 
@@ -52,6 +52,8 @@ const { found, clean } = await scrub(new Uint8Array(buffer)); // clean is a Uint
 npm test
 ```
 
+The suite uses `exiftool` to double-check the clean files when it is installed, and skips those checks with a note when it is not.
+
 ## Roadmap
 
 - [ ] PDF (Info dict, XMP, embedded file metadata)
@@ -61,7 +63,7 @@ npm test
 
 ## Limits
 
-scrubbr removes metadata, not visible content. A face, a street sign or text inside an image is still there. Always check the clean file before sharing something sensitive.
+scrubbr removes metadata, not visible content. A face, a street sign or text inside an image is still there. Worksheet names and slide titles also stay: they are part of the document content, not metadata. Always check the clean file before sharing something sensitive.
 
 ## License
 
